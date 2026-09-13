@@ -28,8 +28,13 @@ var todoGroup = app.MapGroup("/api/todos").WithTags("Todos");
 #region Database Endpoints  
 todoGroup.MapGet("/", async (AppDbContext db) =>
 {
+
     var todos= await db.TodoItems.ToListAsync(); 
-    return todos.Count ==0 ? Results.NotFound() : Results.Ok(todos);
+
+    var todoGetDtos = todos.Select(t => 
+    new TodoGetDto(t.Id, t.Title, t.IsCompleted));
+
+    return todos.Count == 0 ? Results.NotFound() : Results.Ok(todos);
 });
 //Post
 todoGroup.MapPost("/", async (AppDbContext db, TodoPostDto dto) =>
@@ -39,6 +44,7 @@ todoGroup.MapPost("/", async (AppDbContext db, TodoPostDto dto) =>
     var todo = new TodoItem
     {
         Title = dto.Title,
+        Description = dto.Title,
         IsCompleted = false,
         CreatedAt = DateTime.UtcNow
     };
