@@ -1,10 +1,17 @@
 using TodoApi.Dtos;
+using TodoApi.Model;
+using TodoApi.Data;
+using Microsoft.EntityFrameworkCore;                
+                                    
+
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 var app = builder.Build();
 
@@ -16,62 +23,90 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 var todoGroup = app.MapGroup("/api/todos").WithTags("Todos");
-
-var todos = new List<TodoGetDto>
+#region In-memory Endpoints
+#endregion
+#region Database Endpoints  
+todoGroup.MapGet("/", async (AppDbContext db) =>
 {
-    new(1, "Learn C#", true),
-    new(2, "Learn ASP.NET Core", false),
-    new(3, "Build a web API", false)
-};
-
-todoGroup.MapGet("/api/todos", () => Results.Ok(todos));
-
-todoGroup.MapGet("/api/todos/{id}", (int id) =>
-{
-    var todo = todos.FirstOrDefault(t => t.Id == id);
-
-    return todo is not null ? Results.Ok(todo) : Results.NotFound();
+    var todos= await db.TodoItems.ToListAsync(); 
+    return todos.Count ==0 ? Results.NotFound() : Results.Ok(todos);
 });
-
-todoGroup.MapPost("/api/todos", (TodoPostDto dto) =>
+//Post
+todoGroup.MapPost("/", async (AppDbContext db, TodoPostDto dto) =>
 {
-    var nextId = todos.Count == 0 ? 1 : todos.Max(t => t.Id) + 1;
-
-    var todo = new TodoGetDto(nextId, dto.Title, false);
-    todos.Add(todo);
-
-    return Results.Created($"/api/todos/{todo.Id}", todo);
-});
-
-todoGroup.MapPut("/api/todos/{id}", (int id, TodoPutDto dto) =>
-{
-    try
+    var LastTodo = await db.TodoItems.OrderByDescending(t => t.Id).FirstOrDefaultAsync();
+    var nextId = LastTodo is null ? 1 : LastTodo.Id + 1;
+    var todo = new TodoItem
     {
-        var index = todos.FindIndex(x => x.Id == id);
-        if (index == -1) return Results.NotFound();
+        Title = dto.Title,
+        IsCompleted = false,
+        CreatedAt = DateTime.UtcNow
+    };
 
-        todos[index] = todos[index] with
-        {
-            Title = dto.Title,
-            IsCompleted = dto.IsCompleted
-        };
+    db.TodoItems.Add(todo);
+    await db.SaveChangesAsync();
 
-        return Results.Ok(todos[index]);
-    }
-    catch (Exception ex)
-    {
-        return Results.Problem(ex.Message);
-    }
+
+    var todoGetDto = new TodoGetDto(todo.Id, todo.Title, todo.IsCompleted);
+    return Results.Created($"/api/todos/{todo.Id}", todoGetDto);
 });
 
-todoGroup.MapDelete("/api/todos/{id}", (int id, TodoPutDto dto) =>
+#endregion
+// var todos = new List<TodoGetDto>
+// {
+//     new(1, "Learn C#", true),
+//     new(2, "Learn ASP.NET Core", false),
+//     new(3, "Build a web API", false)
+// };
 
-{
-    var todo = todos.FirstOrDefault(t => t.Id == id);
-    if (todo is null) return Results.NotFound();
+// todoGroup.MapGet("/api/todos", () => Results.Ok(todos));
 
-    todos.Remove(todo);
-    return Results.NoContent();
-});
+// todoGroup.MapGet("/api/todos/{id}", (int id) =>
+// {
+//     var todo = todos.FirstOrDefault(t => t.Id == id);
+
+//     return todo is not null ? Results.Ok(todo) : Results.NotFound();
+// });
+
+// todoGroup.MapPost("/api/todos", (TodoPostDto dto) =>
+// {
+//     var nextId = todos.Count == 0 ? 1 : todos.Max(t => t.Id) + 1;
+
+//     var todo = new TodoGetDto(nextId, dto.Title, false);
+//     todos.Add(todo);
+
+//     return Results.Created($"/api/todos/{todo.Id}", todo);
+// });
+
+// todoGroup.MapPut("/api/todos/{id}", (int id, TodoPutDto dto) =>
+// {
+//     try
+//     {
+//         var index = todos.FindIndex(x => x.Id == id);
+//         if (index == -1) return Results.NotFound();
+
+//         todos[index] = todos[index] with
+//         {
+//             Title = dto.Title,
+//             IsCompleted = dto.IsCompleted
+//         };
+
+//         return Results.Ok(todos[index]);
+//     }
+//     catch (Exception ex)
+//     {
+//         return Results.Problem(ex.Message);
+//     }
+// });
+
+// todoGroup.MapDelete("/api/todos/{id}", (int id, TodoPutDto dto) =>
+
+// {
+//     var todo = todos.FirstOrDefault(t => t.Id == id);
+//     if (todo is null) return Results.NotFound();
+
+//     todos.Remove(todo);
+//     return Results.NoContent();
+// });
 
 app.Run();
